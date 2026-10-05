@@ -18,13 +18,13 @@ CPU_LITE is a small 32-bit multicycle processor with a separate instruction memo
 Main features:
 
 - 32-bit datapath, 16 general-purpose registers (R0-R15, R0 is a normal register).
-- Fixed 32-bit instruction format, 8-bit opcode, 40 opcodes defined (38 implemented).
+- Fixed 32-bit instruction format, 8-bit opcode, 40 opcodes defined, all implemented.
 - Multicycle control FSM: FETCH, DECODE, EXEC, MEM, WB, HALT.
 - ALU with add/sub/logic/shift/rotate/compare and a 2-cycle 32x32 multiplier.
 - 4-bit status register PSR = {V, C, N, Z}, per-instruction flag write mask.
 - 4K x 32 program memory (synchronous read, loaded by the testbench).
 - Data path: L1 data cache (clk_cpu) -> CDC bridge (two async FIFOs) -> memory controller (clk_mem) -> 16K x 32 data memory.
-- L1 cache: direct-mapped, 256 lines x 4 words, write-through, no-write-allocate.
+- L1 cache: direct-mapped, 10 lines x 4 words, write-through, no-write-allocate. Index is `(word_addr >> 2) % 10`.
 
 ---
 
@@ -35,7 +35,7 @@ flowchart LR
     subgraph CPU_DOMAIN["clk_cpu domain (10 ns)"]
         PM["program_memory<br/>4K x 32"]
         CORE["cpu_core"]
-        L1["l1_cache<br/>256 x 4 words"]
+        L1["l1_cache<br/>10 x 4 words"]
         TXW["TX FIFO<br/>write side"]
         RXR["RX FIFO<br/>read side"]
     end
@@ -69,6 +69,7 @@ cpu_top
 │   ├── u_addr_gen      addr_gen
 │   ├── u_alu           alu
 │   ├── u_brnach_unit   branch_unit
+│   ├── u_return_stack  return_stack
 │   ├── u_pc_unit       pc_unit
 │   └── u_ctrl_fsm      control_fsm
 ├── u_program_memory    program_memory
@@ -94,6 +95,7 @@ cpu_top
 | `imm_gen.v` | `imm_gen` | comb |
 | `addr_gen.v` | `addr_gen` | comb |
 | `branch_unit.v` | `branch_unit` | comb |
+| `return_stack.v` | `return_stack` | clk_cpu |
 | `pc_unit.v` | `pc_unit` | clk_cpu |
 | `program_memory.v` | `program_memory` | clk_cpu |
 | `mem_subsys_top.v` | `mem_subsys_top` | both |
@@ -123,8 +125,7 @@ cpu_top
 | `PC_WIDTH` | 12 | cpu_core, program_memory | Program address width (4096 words) |
 | `DMEM_ADDR_WIDTH` / `ADDR_WIDTH` | 14 | cpu_core, mem_subsys | Data word address width (16384 words) |
 | `DATA_WIDTH` | 32 | mem_subsys | Data width |
-| `NUM_LINES` | 256 | l1_cache | Cache lines |
-| `INDEX_WIDTH` | 8 | l1_cache | log2(NUM_LINES) |
+| `NUM_LINES` | 10 | l1_cache, mem_subsys | Cache lines. Index is `line % NUM_LINES`, 4 bits for 10 lines |
 | `WORDS_PER_LINE` | 4 | l1_cache | Words per line |
 | `TX_FIFO_DEPTH_LOG2` | 3 | cdc_bridge | TX FIFO depth = 8 |
 | `RX_FIFO_DEPTH_LOG2` | 3 | cdc_bridge | RX FIFO depth = 8 |
@@ -140,6 +141,7 @@ cpu_top
 | R0-R15 | 32 | General purpose. Two combinational read ports, one synchronous write port. All cleared on reset. |
 | PC | 12 | Word address into program memory. Reset to 0. |
 | PSR | 4 | Status flags, cleared on reset. |
+| Return stack | 16 x 12 | Hardware link addresses for CALL/RET. Empty after reset. |
 
 PSR bit map:
 
@@ -215,12 +217,14 @@ Direct load/store addresses are `{2'b00, imm[11:0]}`, so direct addressing reach
 | 0x24 | BLTU | if (!C) PC = imm | - |
 | 0x25 | BGEU | if (C) PC = imm | - |
 | 0x26 | JMP_REG | PC = rs1[11:0] | - |
-| 0x27 | CALL | not implemented -> HALT | - |
-| 0x28 | RET | not implemented -> HALT | - |
+| 0x27 | CALL | push PC+1; PC = imm | - |
+| 0x28 | RET | PC = pop() | - |
 | 0xFF | HALT | stop, FSM parks in HALT | - |
 | others | - | illegal -> `illegal_out`, HALT | - |
 
 Conditional branches BEQ..BGEU test the PSR, so they are normally preceded by `CMP rs1, rs2` (which writes all four flags).
+
+`CALL` uses the same absolute immediate target as `JMP`. It pushes the address of the next instruction (`PC+1`) onto a 16-deep hardware return stack, then jumps. `RET` pops that address into the PC. Register fields of both instructions are ignored, and neither writes PSR. A `CALL` when the stack is full, or a `RET` when it is empty, sends the FSM to HALT without updating the PC. `illegal_out` stays 0 for a stack fault.
 
 ---
 
@@ -237,7 +241,8 @@ Conditional branches BEQ..BGEU test the PSR, so they are normally preceded by `C
 - **Write-back mux** (`wb_sel`): `00` ALU result, `01` load data, `10` immediate (LOAD_IMM, LUI).
 - **RF write enable** = FSM `reg_wr_en` (WB state) AND decoder `wr_rd`.
 - **PSR write enable** = decoder flag mask AND FSM `flags_wr_en`.
-- **branch_unit**: selects `next_pc` = branch target, `rs1[11:0]` (JMP_REG) or `pc + 1`.
+- **branch_unit**: selects `next_pc` = branch target, `rs1[11:0]` (JMP_REG), return-stack top (RET), or `pc + 1`.
+- **return_stack**: 16 x 12. CALL pushes `PC+1` and RET pops on the WB edge, the same edge that loads the PC. Push and pop are suppressed on overflow and underflow; the FSM halts in EXEC instead of reaching WB.
 - **pc_unit**: PC register, updated only in WB (`pc_en_in`).
 
 ### 5.2 Control FSM
@@ -248,12 +253,12 @@ stateDiagram-v2
     FETCH --> FETCH : imem vld = 0
     FETCH --> DECODE : imem vld = 1 / ir_wr_en
     DECODE --> EXEC
-    EXEC --> HALT : HALT, illegal, CALL, RET
+    EXEC --> HALT : HALT, illegal, unimplemented, stack fault
     EXEC --> EXEC : MUL and !mul_done
     EXEC --> WB : MUL and mul_done
     EXEC --> EXEC : LD/ST and !mem_ready
     EXEC --> MEM : LD/ST and mem_ready
-    EXEC --> WB : ALU / branch / other
+    EXEC --> WB : ALU / branch / CALL / RET
     MEM --> MEM : !mem_done
     MEM --> WB : mem_done
     WB --> FETCH : reg_wr_en, pc_wr_en
@@ -275,7 +280,7 @@ stateDiagram-v2
 
 | Instruction class | Cycles | Breakdown |
 |---|---|---|
-| ALU, LOAD_IMM, LUI, MOV, NOP, branches | 5 | FETCH 2, DECODE 1, EXEC 1, WB 1 |
+| ALU, LOAD_IMM, LUI, MOV, NOP, branches, CALL, RET | 5 | FETCH 2, DECODE 1, EXEC 1, WB 1 |
 | MUL | 7 | FETCH 2, DECODE 1, EXEC 3, WB 1 |
 | LOAD cache hit | 6 | FETCH 2, DECODE 1, EXEC 1, MEM 1, WB 1 |
 | LOAD cache miss | variable | 4-word line fill across the CDC bridge |
@@ -327,7 +332,11 @@ Overflow: `add_v = (A[31]==B[31]) && (sum[31]!=A[31])`, `sub_v = (A[31]!=B[31]) 
 
 ### 6.3 Branch unit (`branch_unit.v`)
 
-Combinational. Taken conditions per section 4.3; `next_pc = taken ? (JMP_REG ? rs1[11:0] : imm[11:0]) : pc + 1`.
+Combinational. Taken conditions per section 4.3; `next_pc` is `rs1[11:0]` for JMP_REG, the return-stack top for RET, `imm[11:0]` for every other taken branch (including CALL), and `pc + 1` when not taken.
+
+### 6.3.1 Return stack (`return_stack.v`)
+
+16 entries, each `PC_WIDTH` bits. A 5-bit count `sp` is 0 after reset (empty) and 16 when full. `top_out` is the most recently pushed address. CALL pushes `PC+1` when the FSM writes the PC; RET pops on that same edge, after `top_out` has already been selected as `next_pc`.
 
 ### 6.4 Program memory (`program_memory.v`)
 
@@ -359,9 +368,9 @@ Combinational. Taken conditions per section 4.3; `next_pc = taken ? (JMP_REG ? r
 | Organisation | Direct-mapped |
 | Lines | 10 |
 | Line size | 4 words (16 bytes) |
-| Capacity | 1024 words (4 KB) |
+| Capacity | 40 words (160 bytes) |
 | Write policy | Write-through, no-write-allocate |
-| Address split (14 bit) | tag [13:10] (4b), index [9:2] (8b), offset [1:0] (2b) |
+| Address map (14 bit) | `line = addr[13:2]`, `index = line % 10` (0-9), `tag = line / 10`, `offset = addr[1:0]` |
 
 States: IDLE (`ready_out = 1`), PUSH (sending remaining commands to TX FIFO), WAIT_RESP (collecting responses from RX FIFO).
 
@@ -449,14 +458,15 @@ FSM in clk_mem:
 
 | Testbench | DUT | Scope |
 |---|---|---|
-| `tb/tb_cpu_top.v` | `cpu_top` | Full system: ISA, cache, CDC bridge, data memory |
+| `src/Testbench/tb_cpu_top.v` | `cpu_top` | Full system: ISA, cache, CDC bridge, data memory |
 | `tb/tb_alu_mul.v` | `alu` | Multiplier unit |
 
 ### 10.1 `tb_cpu_top`
 
-- Builds programs with helper tasks and writes them into `dut.u_program_memory.mem[]`.
-- Monitors: cache hit/miss classification and data check against a shadow memory, TX and RX FIFO scoreboards, data-memory read/write check, optional instruction trace.
-- Tests: ALU arithmetic; LUI/SAR/rotate/XORI/MOV/SLT/EQ; all branch types; load/store with expected cache/FIFO traffic; sum loop (DATA[0x200] = 55); illegal opcode halt; unimplemented CALL halt.
+- Builds programs with helper tasks and writes them into `dut.u_program_memory.mem[]`. Data words are written into `dut.u_mem_subsys.u_data_mem.mem[]` before each program.
+- Self-checks registers, PSR behavior through branches, data memory, the return stack, `halted_out`, and `illegal_out`.
+- Tests: ALU arithmetic and immediates; shifts, rotates, MUL, and EQ; SLT/SLTU and CMP; every branch and jump, including flag side effects; load/store hit, miss, indirect, and a cache-line conflict; sum of words 0..9 stored at word `0x20` (55); CALL/RET including nesting, an empty RET, and a full stack; HALT and an illegal opcode.
+- The cache has 10 lines. Any data address is legal; two lines alias when `(addr >> 2) % 10` matches. The conflict check uses word `0x28`, which aliases with word 0.
 
 ### 10.2 `tb_alu_mul`
 
@@ -471,11 +481,18 @@ iverilog -g2012 -o tb_alu_mul.vvp Design_files/alu.v tb/tb_alu_mul.v
 vvp tb_alu_mul.vvp
 ```
 
+Full CPU (`src/Testbench/tb_cpu_top.v`), from the repo root:
+
+```
+iverilog -g2012 -o tb_cpu_top.vvp src/Design_files/*.v src/Testbench/tb_cpu_top.v
+vvp tb_cpu_top.vvp
+```
+
 ---
 
 ## 11. Known Limitations / Notes
 
-1. CALL (0x27) and RET (0x28) are decoded but not implemented (no stack); the core halts.
+1. The return stack holds 16 addresses. A 17th nested `CALL`, or a `RET` on an empty stack, halts the core. There is no software-visible stack pointer.
 2. EQ, SLT and SLTU set `Z = ~result`, i.e. Z = 1 when the comparison is **false**. This is the opposite polarity of CMP; BEQ after EQ branches when the values differ.
 3. SUB/SUBI update only Z and N. Use CMP before BLT/BGE/BLTU/BGEU.
 4. Direct LOAD/STORE and branch targets use the 12-bit immediate (absolute), limiting direct data addressing to words 0-4095 and branch targets to the full 4K program space.
