@@ -1,29 +1,37 @@
-module cpu_top (
-    input  wire clk_cpu,
-    input  wire rst_cpu_n,
-    input  wire clk_mem,
-    input  wire rst_mem_n,
-    output wire halted_out,
-    output wire illegal_out
+module cpu_top #(
+    parameter PC_WIDTH           = 12,
+    parameter DMEM_ADDR_WIDTH    = 14,
+    parameter DATA_WIDTH         = 32,
+    parameter NUM_LINES          = 10,
+    parameter WORDS_PER_LINE     = 4,
+    parameter TX_FIFO_DEPTH_LOG2 = 3,
+    parameter RX_FIFO_DEPTH_LOG2 = 3
+) (
+    input  wire                         clk_cpu,
+    input  wire                         rst_cpu_n,
+    input  wire                         clk_mem,
+    input  wire                         rst_mem_n,
+    output wire                         halted_out,
+    output wire                         illegal_out
 );
 
-    wire [31:0]         imem_rd_data;
-    wire                imem_rd_data_vld;
-    wire                imem_req;
-    wire [11:0]         imem_addr;
+    wire [DATA_WIDTH-1:0]               imem_rd_data;
+    wire                                imem_rd_data_vld;
+    wire                                imem_req;
+    wire [PC_WIDTH-1:0]                 imem_addr;
 
-    wire                dmem_ready;
-    wire [31:0]         dmem_rd_data;
-    wire                dmem_rd_data_valid;
-    wire                dmem_xact_done;
-    wire                dmem_req;
-    wire                dmem_wr_en;
-    wire [13:0]         dmem_addr;
-    wire [31:0]         dmem_wr_data;
+    wire                                dmem_ready;
+    wire [DATA_WIDTH-1:0]               dmem_rd_data;
+    wire                                dmem_rd_data_valid;
+    wire                                dmem_xact_done;
+    wire                                dmem_req;
+    wire                                dmem_wr_en;
+    wire [DMEM_ADDR_WIDTH-1:0]          dmem_addr;
+    wire [DATA_WIDTH-1:0]               dmem_wr_data;
 
     cpu_core #(
-        .PC_WIDTH        (12),
-        .DMEM_ADDR_WIDTH (14)
+        .PC_WIDTH        (PC_WIDTH),
+        .DMEM_ADDR_WIDTH (DMEM_ADDR_WIDTH)
     ) u_cpu_core (
         .clk_cpu               (clk_cpu),
         .rst_cpu_n             (rst_cpu_n),
@@ -44,7 +52,7 @@ module cpu_top (
     );
 
     program_memory #(
-        .PC_WIDTH (12)
+        .PC_WIDTH (PC_WIDTH)
     ) u_program_memory (
         .clk_cpu              (clk_cpu),
         .rst_cpu_n            (rst_cpu_n),
@@ -55,8 +63,12 @@ module cpu_top (
     );
 
     mem_subsys_top #(
-        .DATA_WIDTH (32),
-        .ADDR_WIDTH (14)
+        .DATA_WIDTH         (DATA_WIDTH),
+        .ADDR_WIDTH         (DMEM_ADDR_WIDTH),
+        .NUM_LINES          (NUM_LINES),
+        .WORDS_PER_LINE     (WORDS_PER_LINE),
+        .TX_FIFO_DEPTH_LOG2 (TX_FIFO_DEPTH_LOG2),
+        .RX_FIFO_DEPTH_LOG2 (RX_FIFO_DEPTH_LOG2)
     ) u_mem_subsys (
         .clk_cpu         (clk_cpu),
         .rst_cpu_n       (rst_cpu_n),

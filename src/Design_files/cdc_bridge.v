@@ -77,7 +77,6 @@ u_tx_fifo (
 );
 
 //RX FIFO 
-//TX FIFO
 async_fifo #(
     .DATA_WIDTH     (DATA_WIDTH),
     .DEPTH_LOG2     (RX_FIFO_DEPTH_LOG2)

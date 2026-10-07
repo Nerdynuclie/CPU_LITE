@@ -9,6 +9,7 @@ module mem_subsys_top
     parameter DATA_WIDTH            = 32,
     parameter ADDR_WIDTH            = 14,
     parameter NUM_LINES             = 10,
+    parameter WORDS_PER_LINE        = 4,
     parameter TX_FIFO_DEPTH_LOG2    = 3,
     parameter RX_FIFO_DEPTH_LOG2    = 3  
 )
@@ -68,7 +69,8 @@ wire [DATA_WIDTH-1:0]               mem_rd_data;
 l1_cache #(
     .DATA_WIDTH     (DATA_WIDTH),
     .ADDR_WIDTH     (ADDR_WIDTH),
-    .NUM_LINES      (NUM_LINES)
+    .NUM_LINES      (NUM_LINES),
+    .WORDS_PER_LINE (WORDS_PER_LINE)
 )
 u1_l1_cache(
     .clk_cpu                    (clk_cpu),
