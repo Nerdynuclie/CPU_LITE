@@ -385,6 +385,37 @@ Valid bits are cleared on reset; tag and data arrays are not reset.
 
 ### 7.3 CDC bridge (`cdc_bridge.v`, `async_fifo.v`)
 
+```mermaid
+flowchart LR
+    subgraph CPU["CPU clock domain · clk_cpu"]
+        Cache["L1 cache"]
+    end
+
+    subgraph Bridge["CDC bridge"]
+        TX["TX async FIFO<br/>47-bit command · depth 8"]
+        RX["RX async FIFO<br/>32-bit response · depth 8"]
+        TXSync["TX FIFO Gray-pointer<br/>2-flop synchronizers"]
+        RXSync["RX FIFO Gray-pointer<br/>2-flop synchronizers"]
+    end
+
+    subgraph MEM["Memory clock domain · clk_mem"]
+        Ctrl["Memory controller"]
+        RAM["Data memory<br/>16K × 32"]
+    end
+
+    Cache -->|"push: {wr_data, addr, wr_en}"| TX
+    TX -->|"command + empty/pop handshake"| Ctrl
+    Ctrl -->|"mem_req, wr_en, addr, wr_data"| RAM
+    RAM -->|"read data + valid"| Ctrl
+    Ctrl -->|"response + push handshake"| RX
+    RX -->|"read data / write ack + empty/pop"| Cache
+
+    TX -.->|"Gray write pointer crosses to clk_mem"| TXSync
+    TXSync -.->|"Gray read pointer crosses to clk_cpu"| TX
+    RX -.->|"Gray write pointer crosses to clk_cpu"| RXSync
+    RXSync -.->|"Gray read pointer crosses to clk_mem"| RX
+```
+
 | FIFO | Write clock | Read clock | Width | Depth | Payload |
 |---|---|---|---|---|---|
 | TX (`u_tx_fifo`) | clk_cpu | clk_mem | 47 | 8 | `{wr_data[31:0], addr[13:0], wr_en}` |

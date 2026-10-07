@@ -10,10 +10,10 @@ module program_memory #(
     input  wire                 clk_cpu,
     input  wire                 rst_cpu_n,
 
-    input  wire [PC_WIDTH-1:0]  imem_addr_in,
-    input  wire                 imem_req_in,
-    output reg  [31:0]          imem_rd_data_out,
-    output reg                  imem_rd_data_vld_out
+    input  wire [PC_WIDTH-1:0]  imem_addr_in,           //from pc unit
+    input  wire                 imem_req_in,            //from control fsm 
+    output reg  [31:0]          imem_rd_data_out,       //to instruction decoder
+    output reg                  imem_rd_data_vld_out    //to control fsm 
 );
 
     reg [31:0] mem [0:DEPTH-1];

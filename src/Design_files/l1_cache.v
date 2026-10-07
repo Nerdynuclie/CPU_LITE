@@ -77,8 +77,8 @@ module l1_cache
     reg [TAG_WIDTH-1:0]           tag_arr   [0:NUM_LINES-1];
     reg [DATA_WIDTH-1:0]          data_arr  [0:NUM_LINES-1][0:WORDS_PER_LINE-1];
 
-    // valid_arr is reset. tag_arr and data_arr are not, and rst_cpu_n is
-    // not in their sensitivity list. A line is never read while valid is 0.
+    // valid_arr, tag_arr and data_arr are all reset to a safe empty state.
+    // A line is never read while valid is 0.
     integer i;
     integer w;
     reg                           wr_valid_wr_en;
@@ -102,8 +102,15 @@ module l1_cache
             valid_arr[wr_index] <= 1'b1;
     end
 
-    always @(posedge clk_cpu) begin
-        if (wr_valid_wr_en) begin
+    always @(posedge clk_cpu or negedge rst_cpu_n) begin
+        if (!rst_cpu_n) begin
+            for (i = 0; i < NUM_LINES; i = i + 1) begin
+                tag_arr[i] <= {TAG_WIDTH{1'b0}};
+                for (w = 0; w < WORDS_PER_LINE; w = w + 1)
+                    data_arr[i][w] <= {DATA_WIDTH{1'b0}};
+            end
+        end
+        else if (wr_valid_wr_en) begin
             tag_arr[wr_index] <= wr_tag;
             if (wr_line_en) begin
                 for (w = 0; w < WORDS_PER_LINE; w = w + 1) begin

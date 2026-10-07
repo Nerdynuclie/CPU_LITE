@@ -6,18 +6,18 @@ module instruction_decoder #(
     input  wire [inst_width-1:0]  inst_in,
 
     output wire [7:0]   opcode_out,
-    output wire [3:0]   rd_out,
-    output wire [3:0]   rs1_out,
-    output wire [3:0]   rs2_out,
-    output wire [11:0]  imm_out,
+    output wire [3:0]   rd_out,                 // to reg file via mux
+    output wire [3:0]   rs1_out,                // to reg file via mux
+    output wire [3:0]   rs2_out,                // to reg file via mux
+    output wire [11:0]  imm_out,                // to immediate generator (imm_gen)
 
     //register file control signals
     output reg          ra1_is_rd_out,    //read control 1:read port A addr =rd 0:read port A addr rs1
-    output reg          wr_rd_out,        //write control 1: write enable
+    output reg          wr_rd_out,        //write control 1: write enable //to reg file 
     output reg [1:0]    wb_sel_out,       //00-ALU result, 01- load data, 10 - imm_ext
 
     //ALU Cntrl signals
-    output reg [3:0]    alu_op_out,
+    output reg [3:0]    alu_op_out,       // to alu, 4 bit ALU opcode
     output reg          op_b_is_imm_out,  //if 1 OPB is IMM
     output reg [1:0]    imm_mode_out,     //i/p to imm_gen 00-zero ext 01 - sign_ext 10 - imm_ext
     output reg [3:0]    flag_we_mask_out, //{V, C, N, Z} Pre flag write enable for flag
