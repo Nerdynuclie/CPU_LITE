@@ -95,7 +95,7 @@ module control_fsm
                 if (illegal_in || unimpl_in) begin
                     next_state = HALT;    // visible stop instead of silently
                 end                     
-                else if (iHALT_in) begin
+                else if (is_halt_in) begin
                     next_state = HALT;
                 end
                 else if (is_mul_in) begin
