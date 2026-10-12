@@ -1,6 +1,5 @@
 `default_nettype none
 // control_fsm.v
-
 module control_fsm
 (
     input  wire         clk_cpu,
@@ -48,20 +47,20 @@ module control_fsm
 );
 
     // States
-    localparam [2:0] S_FETCH  = 3'd0,
-                     S_DECODE = 3'd1,
-                     S_EXEC   = 3'd2,
-                     S_MEM    = 3'd3,   // request already accepted; waiting for mem_done_i
-                     S_WB     = 3'd4,
-                     S_HALT   = 3'd5;
+    localparam [2:0] FETCH  = 3'd0,
+                     DECODE = 3'd1,
+                     EXEC   = 3'd2,
+                     MEM    = 3'd3,   // request already accepted; waiting for mem_done_i
+                     WB     = 3'd4,
+                     HALT   = 3'd5;
 
     reg [2:0] current_state, next_state;
 
-    assign halted_out  = (current_state == S_HALT);
+    assign halted_out  = (current_state == HALT);
     assign illegal_out = illegal_in;
 
     always @(posedge clk_cpu or negedge rst_cpu_n) begin
-        if (!rst_cpu_n) current_state <= S_FETCH;
+        if (!rst_cpu_n) current_state <= FETCH;
         else            current_state <= next_state;
     end
 
@@ -79,67 +78,67 @@ module control_fsm
         next_state     = current_state;
 
         case (current_state)
-            S_FETCH: begin
+            FETCH: begin
                 imem_req_out = 1'b1;
                 if (imem_rd_data_vld_in) begin
                     ir_wr_en_out = 1'b1;
-                    next_state = S_DECODE;
+                    next_state = DECODE;
                 end
             end
 
-            S_DECODE: begin
+            DECODE: begin
                 // decoder is combinational module
-                next_state = S_EXEC;
+                next_state = EXEC;
             end
 
-            S_EXEC: begin
+            EXEC: begin
                 if (illegal_in || unimpl_in) begin
-                    next_state = S_HALT;    // visible stop instead of silently
+                    next_state = HALT;    // visible stop instead of silently
                 end                     
-                else if (is_halt_in) begin
-                    next_state = S_HALT;
+                else if (iHALT_in) begin
+                    next_state = HALT;
                 end
                 else if (is_mul_in) begin
                     mul_start_out = 1'b1;
                     flags_wr_en_out = 1'b1;
 
                     if (mul_done_in)
-                        next_state = S_WB;
+                        next_state = WB;
                 end
                 else if (stack_fault_in) begin
-                    next_state = S_HALT;
+                    next_state = HALT;
                 end
                 else if (is_load_in || is_store_in) begin
                     mem_req_out = 1'b1;
                     mem_wr_en_out  = is_store_in;
                     if (mem_ready_in)
-                        next_state = S_MEM;
+                        next_state = MEM;
                 end
                 else begin
                     flags_wr_en_out = 1'b1;
-                    next_state    = S_WB;
+                    next_state    = WB;
                 end
             end
 
             
-            S_MEM: begin
+            MEM: begin
                 if (mem_done_in)
-                    next_state = S_WB;
+                    next_state = WB;
             end
 
             
-            S_WB: begin
+            WB: begin
                 reg_wr_en_out = 1'b1;   // gated by decoder.wr_rd_o at the top level
                 pc_wr_en_out  = 1'b1;   // branch_unit picks target vs pc+1
-                next_state  = S_FETCH;
+                next_state  = FETCH;
             end
 
             
-            S_HALT: begin
-                next_state = S_HALT;   // parked; needs external reset to leave
+            HALT: begin
+                next_state = HALT;   // parked; needs external reset to leave
             end
 
-            default: next_state = S_FETCH;
+            default: next_state = FETCH;
 
         endcase
     end

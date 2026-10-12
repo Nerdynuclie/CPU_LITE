@@ -5,7 +5,7 @@
 module branch_unit #(
     parameter PC_WIDTH = 12
 )(
-    input   wire [3:0]          branch_type_in,
+    input   wire [3:0]          branch_type_in,     
     input   wire [3:0]          psr_i,
     input   wire [31:0]         rs1_data_in,        //for JMP_IF/ JMP_REG
 

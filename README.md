@@ -467,9 +467,10 @@ FSM in clk_mem:
 
 - `create_clock` for `clk_cpu` (10 ns) and `clk_mem` (15 ns).
 - `set_clock_groups -asynchronous` between the two clocks.
-- Clock latency, uncertainty, transition.
-- Input delay on resets (60% of the period), output delay on `halted_out`, `illegal_out` (clk_cpu).
-- Driving cell `INVX1_HVT`, output load, wire-load model `8000`, max transition / fanout.
+- 0.2 ns setup uncertainty and 1 ns rise/fall source latency on both clocks.
+- 2.4 ns maximum input delay on each domain's reset and 2.4 ns maximum output delay on `halted_out` and `illegal_out` (clk_cpu).
+- Driving cell `INVX1_HVT` and minimum wire-load model `8000`; these names must exist in the selected technology library.
+- Output load, transition, and fanout limits are not specified in this SDC and should be added when library/flow values are available.
 
 ### 9.2 CDC (`Design_files/cpu_top.sgdc`)
 

@@ -15,19 +15,19 @@ module pc_unit
     output wire [PC_WIDTH-1:0]  pc_plus1_out    //fed to branch unit 
 );
 
-reg [PC_WIDTH-1:0]  pc_q;   //registers next pc value given from branch unit
+reg [PC_WIDTH-1:0]  pc_reg;   //registers next pc value given from branch unit
 
 always @(posedge cpu_clk or negedge rst_cpu_n) begin
     if(!rst_cpu_n) begin
-        pc_q <= {PC_WIDTH{1'b0}};
+        pc_reg <= {PC_WIDTH{1'b0}};
     end
     else if (pc_en_in) begin
-        pc_q <= next_pc_in;
+        pc_reg <= next_pc_in;
     end
 end
 
 //assigning new pc 
-assign pc_out       = pc_q;
-assign pc_plus1_out = pc_q + 1'b1;
+assign pc_out       = pc_reg;
+assign pc_plus1_out = pc_reg + 1'b1;
 
 endmodule
